@@ -1,0 +1,155 @@
+import {
+  ApiTags,
+  ApiQuery,
+  ApiOperation,
+  ApiBody,
+  ApiParam,
+  ApiOkResponse,
+  ApiBadRequestResponse,
+  ApiNotFoundResponse,
+  ApiInternalServerErrorResponse,
+  ApiTooManyRequestsResponse,
+} from '@nestjs/swagger';
+import { ApiSuccessResponse } from 'src/common/decorators/api-success-response.decorator';
+import {
+  PersonaCreadaDto,
+  PersonaRespuestaDto,
+} from './dto/persona-respuesta.dto';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { PersonaService } from './persona.service';
+import { CreatePersonaDto } from './dto/create-persona.dto';
+import { Persona } from './entities/persona.entity';
+import { HandleException } from 'src/common/decorators/handleException.decorator';
+import {
+  PaginatedResponse,
+  SuccessResponse,
+} from 'src/common/interfaces/CustomResponse.interface';
+import { ResponseUtils } from 'src/common/utils/Response.utils';
+import { PaginacionParamsDto } from 'src/common/dto/PaginacionParams.dto';
+import { Auth } from '../auth/decorators/auth.decorator';
+import { RolEnum } from '../auth/enums/rol.enum';
+import { BuscarPersonaDto } from './dto/buscar-persona.dto';
+
+@ApiTags('Personas')
+@ApiTooManyRequestsResponse({ description: 'Límite de solicitudes excedido.' })
+@ApiInternalServerErrorResponse({
+  description: 'Error interno al procesar la persona.',
+})
+@Controller('persona')
+export class PersonaController {
+  constructor(private readonly personaService: PersonaService) {}
+
+  @ApiOperation({
+    summary: 'Registrar persona',
+    description:
+      'Crea la persona, su usuario y cliente. Endpoint publico. Usa el rol enviado o el identificador 3 por defecto.',
+  })
+  @ApiBody({ type: CreatePersonaDto })
+  @ApiSuccessResponse(PersonaCreadaDto, 'Persona Registrada correctamente', 201)
+  @ApiBadRequestResponse({
+    description: 'Datos inválidos o rol de cliente no encontrado.',
+  })
+  @Post()
+  // @Auth(RolEnum.CLIENTE)
+  @HandleException('Error al registrar a la persona')
+  async crearPersona(
+    @Body() dataDto: CreatePersonaDto,
+  ): Promise<SuccessResponse<Partial<Persona>>> {
+    const persona = await this.personaService.crearPersona(dataDto);
+    return ResponseUtils.success(persona, 'Persona Registrada correctamente');
+  }
+
+  @ApiOperation({
+    summary: 'Registrar persona con rol de gerente',
+    description:
+      'Crea la persona, su usuario y cliente, asignando siempre el rol con identificador 2. Requiere rol ADMIN o GERENTE.',
+  })
+  @ApiBody({ type: CreatePersonaDto })
+  @ApiSuccessResponse(PersonaCreadaDto, 'Persona Registrada correctamente', 201)
+  @ApiBadRequestResponse({
+    description: 'Datos invalidos o rol con identificador 2 no encontrado.',
+  })
+  @Post('gerente')
+  @Auth(RolEnum.ADMIN, RolEnum.GERENTE)
+  @HandleException('Error al registrar al gerente')
+  async crearPersonaRol(
+    @Body() dataDto: CreatePersonaDto,
+  ): Promise<SuccessResponse<Partial<Persona>>> {
+    const persona = await this.personaService.crearPersonaRol(dataDto);
+    return ResponseUtils.success(persona, 'Persona Registrada correctamente');
+  }
+
+  // @Patch(':id')
+  // async modifcarPersona(@Param('id') id:number,@Body() dataDto: CreatePersonaDto){
+  //    return await this.personaService.modifcarPersona(id, dataDto);
+  // }
+
+  @ApiOperation({
+    summary: 'Listar personas',
+    description: 'Devuelve personas paginadas. Requiere rol ADMIN o GERENTE.',
+  })
+  @ApiSuccessResponse(
+    PersonaRespuestaDto,
+    'Lista de personas Cargadas Correctamente',
+    200,
+    true,
+  )
+  @ApiBadRequestResponse({ description: 'Parámetros de paginación inválidos.' })
+  @ApiQuery({ type: PaginacionParamsDto })
+  @Get()
+  @Auth(RolEnum.ADMIN, RolEnum.GERENTE)
+  @HandleException('Error al cargar la lista de personas')
+  async ObtenerPersonas(
+    @Query() dto: PaginacionParamsDto,
+  ): Promise<PaginatedResponse<Persona>> {
+    const personas = await this.personaService.obtenerPersonas(dto);
+    return ResponseUtils.paginated(
+      personas.data,
+      personas.total,
+      dto.pagina,
+      dto.porPagina,
+      'Lista de personas Cargadas Correctamente',
+    );
+  }
+
+  @Get('buscar')
+  @Auth(RolEnum.ADMIN, RolEnum.GERENTE)
+  @ApiOperation({
+    summary: 'Buscar personas por nombres y apellidos',
+    description: 'Requiere nombres o apellidos. Busca coincidencias parciales sin distinguir mayusculas; si envia ambos, deben coincidir ambos. Requiere ADMIN o GERENTE. Sin coincidencias devuelve una lista vacia.',
+  })
+  @ApiQuery({ type: BuscarPersonaDto })
+  @ApiSuccessResponse(PersonaRespuestaDto, 'Busqueda de personas realizada correctamente', 200, true)
+  @ApiBadRequestResponse({ description: 'Filtros ausentes, vacios o paginacion invalida.' })
+  @HandleException('Error al buscar personas')
+  async buscarPersonas(@Query() dto: BuscarPersonaDto): Promise<PaginatedResponse<Persona>> {
+    const resultado = await this.personaService.buscarPersonas(dto);
+    return ResponseUtils.paginated(
+      resultado.data, resultado.total, dto.pagina, dto.porPagina,
+      'Busqueda de personas realizada correctamente',
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Obtener persona por ID',
+    description:
+      'Devuelve directamente la persona. Endpoint publico.',
+  })
+  @ApiParam({
+    name: 'id',
+    type: Number,
+    example: 1,
+    description: 'Identificador de la persona.',
+  })
+  @ApiOkResponse({
+    description: 'Persona encontrada.',
+    type: PersonaRespuestaDto,
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la persona con el ID indicado.',
+  })
+  @Get(':id')
+  async ObtenerPersonaId(@Param('id') id): Promise<Persona> {
+    return this.personaService.obtenerPersonaId(id);
+  }
+}
