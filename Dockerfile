@@ -1,24 +1,28 @@
-# Imagen base oficial de Node.js en modo desarrollo
-FROM node:22.23.1-slim
+FROM node:22.23.1-slim AS build
 
-# Directorio de trabajo en el contenedor
 WORKDIR /app
 
-# Instalar CLI de NestJS de forma global
-RUN npm i -g @nestjs/cli
-
-# Copiar archivos de definicion de dependencias
 COPY package*.json ./
-
-# Instalar dependencias limpias y exactas segun package-lock.json
 RUN npm ci
 
-# Copiar el codigo fuente de la aplicacion
 COPY . .
+RUN npm run build
 
-# Puerto expuesto por NestJS
+FROM node:22.23.1-slim AS runtime
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/estatico ./estatico
+RUN mkdir -p /app/estatico/imagenes \
+    && chown -R node:node /app
+
+USER node
+
 EXPOSE 3000
 
-# Comando para iniciar la aplicacion en modo desarrollo con recarga automatica (hot reload)
-CMD ["npm", "run", "start:dev"]
-
+CMD ["node", "dist/main"]
